@@ -9,7 +9,10 @@ import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsumer;
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
+import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -44,36 +47,45 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
 
     @Override
     public void consume(Update update) {
-        if (update.hasMessage()) {
-
-            String text = update.getMessage().getText();
+        if (update.hasMessage() && update.getMessage().hasText()) {
             Long chatId = update.getMessage().getChatId();
-
+            String text = update.getMessage().getText();
             logger.info("User {} writes {}",chatId, text);
-            if (update.getMessage().hasText()) {
-                SendMessage message = SendMessage.builder()
-                        .chatId(chatId.toString())
-                        .text(text)
-                        .replyMarkup(createMainMenuKeyboard())
-                        .build();
-                try {
-                    telegramClient.execute(message);
-                } catch (TelegramApiException e) {
-                    e.printStackTrace();
-                }
-            } else {
-                if (update.hasCallbackQuery()) {
-                    String callbackQuery = update.getCallbackQuery().getData();
-                    switch (callbackQuery) {
-                        case "MENU":
-                            SendMessage message = SendMessage.builder()
-                                    .chatId(chatId.toString())
-                                    .text(text)
-                                    .replyMarkup(createMenuKeyboard())
-                                    .build();
+            SendMessage message = SendMessage.builder()
+                    .chatId(chatId)
+                    .text(text)
+                    .replyMarkup(createMainMenuKeyboard())
+                    .build();
+            try {
+                telegramClient.execute(message);
+            } catch (TelegramApiException e) {
+                e.printStackTrace();
+            }
+
+        } else if (update.hasCallbackQuery()) {
+            CallbackQuery callbackQuery = update.getCallbackQuery();
+            String callbackData = callbackQuery.getData();
+            String callbackQueryId = callbackQuery.getId();
+            logger.info("User {} pressed {}", callbackQueryId, callbackData);
+            Long chatId = callbackQuery.getMessage().getChatId();
+            Integer messageId = callbackQuery.getMessage().getMessageId();
+            switch (callbackData) {
+                case "MENU" -> {
+                    EditMessageText editMessage = EditMessageText.builder()
+                            .chatId(chatId)
+                            .messageId(messageId)
+                            .text("Выберите пиццу:")
+                            .replyMarkup(createMenuKeyboard())
+                            .build();
+                    try {
+                        telegramClient.execute(editMessage);
+                    } catch (TelegramApiException e) {
+                        e.printStackTrace();
                     }
                 }
             }
+
+
         }
     }
 
@@ -102,7 +114,7 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
                 .build();
 
         InlineKeyboardButton order = InlineKeyboardButton.builder()
-                .text("Pizza 2")
+                .text("Пицца 2")
                 .callbackData("Pizza2")
                 .build();
 

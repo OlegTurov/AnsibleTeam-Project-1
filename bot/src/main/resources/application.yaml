@@ -1,0 +1,2 @@
+bot:
+  token: ${PIZZA_BOT_TOKEN}

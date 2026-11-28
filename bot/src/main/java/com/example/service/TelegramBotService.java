@@ -54,22 +54,57 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
 
     @Override
     public void consume(Update update) {
+        boolean isCallback;
         try {
-            if (update.hasMessage() && update.getMessage().hasText()) {
-                processMessage(update);
-            } else if (update.hasCallbackQuery()) {
-                processCallback(update);
+            Long chatId;
+            if (update.getMessage() == null) {
+                chatId = update.getCallbackQuery().getMessage().getChatId();
+                isCallback = true;
+            } else {
+                chatId = update.getMessage().getChatId();
+                isCallback = false;
+            }
+            if (sessions.containsKey(chatId)) {
+                    if (update.hasMessage() && update.getMessage().hasText()) {
+                        processMessage(update);
+                    } else if (update.hasCallbackQuery()) {
+                        processCallback(update);
+                    }
+            } else {
+                SessionTracker sessionTracker = new SessionTracker();
+                sessions.put(chatId, sessionTracker);
+                SendMessage sendMessage = SendMessage.builder()
+                        .chatId(chatId)
+                        .text("Use the new Menu. Choose the option:")
+                        .replyMarkup(keyboardFormatter.createMainKeyboard())
+                        .build();
+
+                int messageId;
+                if (isCallback) {
+                    messageId = update.getCallbackQuery().getMessage().getMessageId();
+                } else {
+                    messageId = update.getMessage().getMessageId();
+                }
+
+                DeleteMessage deleteMessage = DeleteMessage.builder()
+                        .messageId(messageId)
+                        .chatId(chatId)
+                        .build();
+
+                telegramClient.execute(deleteMessage);
+                telegramClient.execute(sendMessage);
             }
         } catch (TelegramApiException e) {
-            e.printStackTrace();
-        } catch (NotQuantityMessageException e) {
-            log.info("User wrote bad message");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+                e.printStackTrace();
+            } catch (NotQuantityMessageException e) {
+                log.info("User wrote bad message");
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
     }
 
-    private void processCallback(Update update) {
+    private void processCallback(Update update) throws TelegramApiException {
         CallbackQuery callbackQuery = update.getCallbackQuery();
         String callbackData = callbackQuery.getData();
         String callbackQueryId = callbackQuery.getId();
@@ -93,7 +128,7 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
                 editMessage = EditMessageText.builder()
                         .chatId(chatId)
                         .messageId(messageId)
-                        //.text(dbService.printCurrentOrder(chatId))
+                        .text("Your order:")
                         .replyMarkup(keyboardFormatter.createOrderKeyboard())
                         .build();
             }
@@ -111,7 +146,7 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
                 editMessage = EditMessageText.builder()
                         .chatId(chatId)
                         .messageId(messageId)
-                        //.text(dbService.printCurrentOrder(chatId))
+                        .text(keyboardFormatter.printCurrentOrder(sessions.get(chatId)))
                         .replyMarkup(keyboardFormatter.createOrderKeyboard())
                         .build();
             }
@@ -139,63 +174,88 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
                     session.getOrder().put(session.getLastProduct(), quantity);
                     session.setState(ChatState.MENU);
 
+                    editMessage = EditMessageText.builder()
+                            .chatId(chatId)
+                            .messageId(messageId)
+                            .text("Added %s %d Choose pizza:".formatted(session.getLastProduct(), quantity))
+                            .replyMarkup(keyboardFormatter.createMenuKeyboard(dbService.getMenu()))
+                            .build();
+
                 } else if (callbackData.startsWith("PRODUCT_")) {
                     String productName = callbackData.substring("PRODUCT_".length());
 
                     session.getOrder().putIfAbsent(productName, 0);
                     session.setLastProduct(productName);
                     session.setState(ChatState.QUANTITY);
+
+                    editMessage = EditMessageText.builder()
+                            .chatId(chatId)
+                            .messageId(messageId)
+                            .text("Choose quantity or type number 1 to 20:")
+                            .replyMarkup(keyboardFormatter.createQuantity())
+                            .build();
                 }
             }
         }
-        try {
-            telegramClient.execute(editMessage);
-        } catch (TelegramApiException e) {
-            e.printStackTrace();
-        }
+        telegramClient.execute(editMessage);
+
     }
 
     private void processMessage(Update update) throws TelegramApiException, NotQuantityMessageException {
         Long chatId = update.getMessage().getChatId();
         String text = update.getMessage().getText();
-        SendMessage sendMessage;
         logger.info("User {} writes {}", chatId, text);
-        SessionTracker sessionTracker;
-        if (sessions.containsKey(chatId)) {
+
+        SessionTracker sessionTracker = sessions.get(chatId);
+        if (ChatState.QUANTITY.equals(sessionTracker.getState())) {
+            int messageId = update.getMessage().getMessageId();
+            try {
+                int quantity = Integer.parseInt(text);
+                if (0 < quantity && quantity < 21) {
+                    sessionTracker.getOrder().replace(sessionTracker.getLastProduct(), quantity);
+                    sessionTracker.setState(ChatState.MENU);
+                    EditMessageText editMessage = EditMessageText.builder()
+                            .chatId(chatId)
+                            .messageId(messageId - 1)
+                            .text("Choose the pizza:")
+                            .replyMarkup(keyboardFormatter.createMenuKeyboard(dbService.getMenu()))
+                            .build();
+
+                    DeleteMessage deleteMessage = DeleteMessage.builder()
+                            .messageId(messageId)
+                            .chatId(chatId)
+                            .build();
+
+                    telegramClient.execute(deleteMessage);
+
+                    telegramClient.execute(editMessage);
+                } else {
+                    throw new NumberFormatException();
+                }
+            } catch (NumberFormatException exception) {
+                EditMessageText editMessage = EditMessageText.builder()
+                        .chatId(chatId)
+                        .messageId(messageId - 1)
+                        .text("Bad Number. Choose quantity or type number 1 to 20:")
+                        .replyMarkup(keyboardFormatter.createQuantity())
+                        .build();
+
+                DeleteMessage deleteMessage = DeleteMessage.builder()
+                        .messageId(messageId)
+                        .chatId(chatId)
+                        .build();
+
+                telegramClient.execute(deleteMessage);
+
+                telegramClient.execute(editMessage);
+            }
+        } else {
             DeleteMessage deleteMessage = DeleteMessage.builder()
                     .messageId(update.getMessage().getMessageId())
                     .chatId(chatId)
                     .build();
             telegramClient.execute(deleteMessage);
             throw new NotQuantityMessageException();
-        } else {
-            sessionTracker = new SessionTracker();
-            sessions.put(chatId, sessionTracker);
-            sendMessage = SendMessage.builder()
-                    .chatId(chatId)
-                    .text("Choose the option:")
-                    .replyMarkup(keyboardFormatter.createMainKeyboard())
-                    .build();
-
-            if (ChatState.QUANTITY.equals(sessionTracker.getState())) {
-                try {
-                    int quantity = Integer.parseInt(text);
-                    if (0 < quantity && quantity < 21) {
-                        sessionTracker.getOrder().replace(sessionTracker.getLastProduct(), quantity);
-                        sessionTracker.setState(ChatState.MENU);
-                        sendMessage = SendMessage.builder()
-                                .chatId(chatId)
-                                .text("Choose the pizza:")
-                                .replyMarkup(keyboardFormatter.createMenuKeyboard(dbService.getMenu()))
-                                .build();
-                    } else {
-                        throw new NumberFormatException();
-                    }
-                } catch (NumberFormatException exception) {
-                    keyboardFormatter.createQuantity("Type the number from 1 to 20");
-                }
-            }
-            telegramClient.execute(sendMessage);
         }
     }
     

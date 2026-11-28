@@ -2,6 +2,7 @@ package com.example.service;
 
 import com.example.response.MenuResponse;
 import com.example.response.PositionResponse;
+import com.example.statehandler.SessionTracker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
@@ -10,6 +11,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -98,7 +100,7 @@ public class KeyboardFormatter {
         return InlineKeyboardMarkup.builder().keyboard(List.of(row1, row2)).build();
     }
 
-    public InlineKeyboardMarkup createQuantity(String s) {
+    public InlineKeyboardMarkup createQuantity() {
         InlineKeyboardButton payment = InlineKeyboardButton.builder()
                 .text("1")
                 .callbackData("1")
@@ -128,5 +130,17 @@ public class KeyboardFormatter {
         row2.add(exit);
 
         return InlineKeyboardMarkup.builder().keyboard(List.of(row1, row2)).build();
+    }
+
+    public String printCurrentOrder(SessionTracker sessionTracker) {
+        Map<String, Integer> positions = sessionTracker.getOrder();
+        String order = "";
+        for (Map.Entry<String, Integer> entry : positions.entrySet()) {
+            order += entry.getKey() + ": " + entry.getValue() + "\n";
+        }
+        if (order.isBlank()) {
+            order = "Your order is empty";
+        }
+        return order;
     }
 }

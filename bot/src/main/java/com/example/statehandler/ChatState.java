@@ -1,10 +1,8 @@
 package com.example.statehandler;
 
 public enum ChatState {
-    MAINMENU,
-    CHOICE,
+    MENU,
     QUANTITY,
-    ORDER,
-    LINK,
+    PAYMENTLINK,
     DONE
 }

@@ -12,5 +12,5 @@ import java.util.Map;
 @Setter
 public class SessionTracker {
     Map<String, Integer> order = new HashMap<>();
-    ChatState state = ChatState.MAINMENU;
+    ChatState state = ChatState.MENU;
 }

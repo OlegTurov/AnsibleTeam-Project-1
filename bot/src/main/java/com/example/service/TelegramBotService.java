@@ -2,6 +2,8 @@ package com.example.service;
 
 import com.example.config.BotConfig;
 import com.example.response.MenuResponse;
+import com.example.statehandler.ChatState;
+import com.example.statehandler.SessionTracker;
 import lombok.extern.log4j.Log4j2;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +23,9 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @Log4j2
@@ -31,6 +35,7 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
     private final KeyboardFormatter keyboardFormatter;
     private final TelegramClient telegramClient;
     private final Logger logger = LoggerFactory.getLogger(TelegramBotService.class);
+    private final Map<Long, SessionTracker> sessions = new HashMap<>();
 
     public TelegramBotService(BotConfig botConfig, KeyboardFormatter keyboardFormatter) {
         this.botConfig = botConfig;
@@ -72,24 +77,30 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
                 editMessage = EditMessageText.builder()
                         .chatId(chatId)
                         .messageId(messageId)
-                        .text("Выберите пиццу:")
+                        .text("Choose pizza:")
                         .replyMarkup(keyboardFormatter.createMenuKeyboard(menu))
                         .build();
+
             }
             case "ORDER":
                 editMessage = EditMessageText.builder()
                         .chatId(chatId)
                         .messageId(messageId)
                         //здесь нужно вывести форматированный заказ
-                        .text(printCurrentOrder())
+                        .text("Choose the option:")
                         .replyMarkup(keyboardFormatter.createOrderKeyboard())
                         .build();
+
+                break;
             case "MAIN-EXIT":
                 editMessage = EditMessageText.builder()
                         .chatId(chatId)
                         .messageId(messageId)
+                        .text("Choose the option:")
                         .replyMarkup(keyboardFormatter.createMainKeyboard())
                         .build();
+
+                break;
 
             case "CHECK":
                 editMessage = EditMessageText.builder()
@@ -99,15 +110,33 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
                         .text(printCurrentOrder())
                         .replyMarkup(keyboardFormatter.createOrderKeyboard())
                         .build();
+                break;
+
             case "CLEAR":
                 //Логика с проверкой состояния заказа, возможным удалением из базы
                 editMessage = EditMessageText.builder()
                         .chatId(chatId)
                         .messageId(messageId)
                         //здесь нужно вывести форматированный заказ
-                        .text(printCurrentOrder())
+                        .text("Order cleared. Choose the option:")
                         .replyMarkup(keyboardFormatter.createOrderKeyboard())
                         .build();
+                break;
+            default -> {
+                SessionTracker sessionTracker = sessions.get(chatId);
+                Map<String, Integer> order = sessionTracker.getOrder();
+                if (ChatState.QUANTITY.equals(sessionTracker.getState())) {
+                    sessionTracker.getOrder().replace(sessionTracker.getLastProduct(), Integer.valueOf(callbackData));
+                    sessionTracker.setState(ChatState.MENU);
+                } else if (callbackData.startsWith("PRODUCT")) {
+                   String productName = callbackData.split("_")[1];
+                   if (order.containsKey(productName)) {
+                       order.put(productName, 0);
+                       sessionTracker.setState(ChatState.QUANTITY);
+                       sessionTracker.setLastProduct(productName);
+                   }
+                }
+            }
         }
         try {
             telegramClient.execute(editMessage);
@@ -120,6 +149,19 @@ public class TelegramBotService implements SpringLongPollingBot, LongPollingSing
         Long chatId = update.getMessage().getChatId();
         String text = update.getMessage().getText();
         logger.info("User {} writes {}",chatId, text);
+        SessionTracker sessionTracker = sessions.get(chatId);
+        if (ChatState.QUANTITY.equals(sessionTracker.getState())) {
+            try {
+                Integer quantity = Integer.valueOf(text);
+                if (0 < quantity && quantity < 21) {
+                    sessionTracker.getOrder().replace(sessionTracker.getLastProduct(), quantity);
+                } else {
+                    throw new NumberFormatException();
+                }
+            } catch (NumberFormatException exception) {
+                keyboardFormatter.createQuantity("Type the number from 1 to 20");
+            }
+        }
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
                 .text("Выберите пункт меню:")

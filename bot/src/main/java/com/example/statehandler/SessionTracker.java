@@ -13,4 +13,5 @@ import java.util.Map;
 public class SessionTracker {
     Map<String, Integer> order = new HashMap<>();
     ChatState state = ChatState.MENU;
+    String lastProduct;
 }

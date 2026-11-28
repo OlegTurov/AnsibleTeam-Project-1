@@ -43,8 +43,8 @@ public class KeyboardFormatter {
             for (int j = 0; j < 3; j++) {
 
                 InlineKeyboardButton product = InlineKeyboardButton.builder()
-                        .text("{} : {}".formatted(products.get(i), costs.get(i)))
-                        .callbackData(products.get(i))
+                        .text("%s : %d".formatted(products.get(i), costs.get(i)))
+                        .callbackData("%s_%s".formatted("PRODUCT", products.get(i)))
                         .build();
                 row.add(product);
 
